@@ -1,109 +1,126 @@
-# Project Context: Lambda-Prompting Architecture
+# Project Manifest: The Lambda-Prompting Architecture
 
-## 1. 解決したい課題 (The Problem)
-現在のLLMにおけるプロンプトエンジニアリングは、自然言語の巨大な「文字列結合」に依存しており、モダンなソフトウェア開発（Code Writing）のパラダイムと決定的に乖離している。
-* 型安全性がない: テキストエディタの補完や静的解析（Linter）が効かない。
-* 変更履歴が追えない: プロンプトを書き換えた際、「どの意図（指示）を追加・削除したことで、出力がどう変わったか」の因果関係（Diff）が不明瞭になる。
-* コンポーネント化の欠如: DSPyのようなツールは強力だが、内部がブラックボックス化しやすく、開発者が制御・デバッグしづらい。
+## 1. The Crisis of Modern Prompt Engineering
+現在のLLMアプリケーション開発における最大の問題は、プロンプトの構築が「自然言語の巨大な文字列結合（String Concatenation）」に依存している点にある。このアプローチは、近代のソフトウェア工学が確立してきたモジュール性、型安全性、およびテスト容易性を完全に破壊している。
 
-## 2. 理論的背景 (Theoretical Framework)
-LLMの推論プロセス（Autoregressive generation）は、本質的にラムダ計算（Lambda Calculus）として非常にシンプルに定式化できる。
+DSPyのような先進的なフレームワークはプロンプトの自動最適化というアプローチで一定の成果を上げているが、同時に内部状態をブラックボックス化し、開発者から「なぜそのプロンプトが生成されたのか」という因果関係の追跡可能性（Traceability）を奪っている。我々に必要なのは、プロンプトを不透明な文字列のスープとして扱うことではなく、静的解析が可能で、変更履歴がツリー構造として可視化される、完全にコンポーザブルな関数群として再定義することである。
+
+本プロジェクトは、計算機科学の最も美しい基礎理論の一つである**ラムダ計算（Lambda Calculus）**のパラダイムを導入することで、この混沌としたプロンプトエンジニアリングを近代的なソフトウェア工学の土俵へと引き戻す試みである。
+
+---
+
+## 2. A Brief Review of Lambda Calculus
+ラムダ計算が本プロジェクトのアーキテクチャにどのように寄与するかを理解するために、まずはその基本概念を簡潔におさらいする。
+
+ラムダ計算は、すべての計算を「関数の定義（抽象化）」と「関数の呼び出し（適用）」のみで表現する数学的体系である。主に以下の3つの要素（ラムダ項）で構成される。
+
+1.  **変数 (Variable):** $x, y, z$ などの記号。
+2.  **抽象化 (Abstraction):** $\lambda x. M$ 
+    これは「変数 $x$ を引数として受け取り、本体（Body）である式 $M$ を評価する無名関数」を定義する。プログラミング言語における関数の宣言に相当する。
+3.  **適用 (Application):** $M \, N$
+    関数 $M$ に引数 $N$ を渡して実行すること。
+
+### 2.1. ベータ簡約（$\beta$-reduction）
+ラムダ計算における「計算の実行」は、関数適用の式を評価し、文字を置き換えていくプロセスであり、これを**ベータ簡約**と呼ぶ。
+関数 $(\lambda x. M)$ に引数 $N$ を適用した場合、本体 $M$ の中の変数 $x$ をすべて $N$ で置き換える。
 
 $$
-M = \lambda c. \text{next-token}(c)
+(\lambda x. M) \, N \implies M[x \coloneqq N]
 $$
 
-プロンプトエンジニアリングで行っている「システムプロンプトの付与」や「Few-shotの提示」は、ラムダ計算におけるカリー化（Currying）および部分適用（Partial Application）、そしてベータ簡約（$\beta$-reduction）に他ならない。
+この「記号を置換し、式を展開していく」というプロセスは、後述するように、コンテキスト（プロンプト）を構築し、LLMがテキストを生成していく過程と完全に一致する。
 
-この作用機序に忠実に従い、プロンプトを「静的な文字列」ではなく「コンテキストを受け取り、新たなコンテキストを返す高階関数（コンビネータ）」として実装する。
+### 2.2. カリー化（Currying）と部分適用（Partial Application）
+ラムダ計算では、関数は常に1つの引数しか取らない。複数の引数を取る関数は、「最初の引数を取り、次の引数を取る関数を返す関数」として表現される（カリー化）。
 
-## 3. アーキテクチャの基本概念 (Core Architecture)
-単なる文字列の関数ではなく、「変更履歴（計算グラフ）」を保持するデータ構造を定義する。
-* PromptTerm（項）:
-最終的なテキスト（text）、それを生成した関数の由来（origin）、および元となった項への参照（children）を持つ。これによりプロンプトのAST（抽象構文木）を構築する。
-* PromptCombinator（コンビネータ）:
-PromptTerm を受け取り、新たな指示（System Role, JSON Formatなど）を付与した新しい PromptTerm を返す関数。
-* compose（関数合成）:
-複数のコンビネータを連鎖的に適用（ベータ簡約）し、最終的なプロンプトツリーを構築する。
+$$
+f(x, y) = M \implies \lambda x. \lambda y. M
+$$
 
-## 4. プロトタイプコード (Proof of Concept)
-以下は uv 環境で検証済みのリファレンス実装（hello-world.py）である。
+この構造において、最初の引数 $x$ だけを渡し、残りの評価を遅延させる操作を**部分適用**と呼ぶ。これは、特定の環境や状態（コンテキスト）を事前に関数内に閉じ込める（バインドする）強力な手段である。
+
+---
+
+## 3. Connecting Lambda Calculus to LLMs
+それでは、ラムダ計算の視座から大規模言語モデル（LLM）の作用機序を捉え直してみよう。
+
+### 3.1. LLM as a Lambda Function
+LLMの本質的な推論プロセス（Autoregressive generation）は、「これまでのトークン列（コンテキスト $c$）を受け取り、次のトークンの確率分布（あるいは次のトークンそのもの）を返す関数」である。これをラムダ抽象として定義する。
+
+$$
+M = \lambda c. \text{next\_token}(c)
+$$
+
+### 3.2. Prompt Engineering as Partial Application
+実際のアプリケーションにおいて、全体のコンテキスト $c$ は単一の文字列ではなく、システム指示（$s$）、Few-shotの例示（$e$）、そしてユーザー入力（$u$）といった複数の要素の結合（$s \cdot e \cdot u$）として構成される。
+
+これをカリー化された関数として再定義すると、以下のようになる。
+
+$$
+M = \lambda s. \lambda e. \lambda u. \text{next\_token}(s \cdot e \cdot u)
+$$
+
+我々が「プロンプトエンジニアリング」と呼んでいる作業、例えば「あなたはPythonのエキスパートです」というシステムプロンプト $s_0$ を設定し、出力フォーマットの例 $e_0$ を提示する行為は、**この関数 $M$ に対する部分適用**に他ならない。
+
+$$
+M_{expert} = M \, s_0 \, e_0 = \lambda u. \text{next\_token}(s_0 \cdot e_0 \cdot u)
+$$
+
+この時点で得られる $M_{expert}$ は、「エキスパートとしての文脈（$s_0, e_0$）を内部にバインドした、新しい関数」である。ユーザーからは単に「入力 $u$ を受け取って処理を行う関数」に見えるが、その実態はベータ簡約を待つ遅延評価の塊である。
+
+既存のアプローチの致命的な欠陥は、この美しい関数の合成プロセスを、単なる「文字列結合（`f"{s0}\n{e0}\n{u}"`）」という極めて低レイヤーな操作に貶めてしまっていることである。文字列に変換された瞬間、システム指示とユーザー入力の境界は失われ、どの指示がどのように出力に影響を与えたのかを追跡することは不可能になる。
+
+---
+
+## 4. The Lambda-Prompting Architecture
+Lambda-Promptingは、プロンプトを「静的な文字列の結合」ではなく、「高階関数の合成による抽象構文木（AST）の構築」として実装することで、上述の理論的背景をコード上で体現する。
+
+### 4.1. `PromptTerm` (項)
+文字列の代わりに、評価状態と履歴を保持するデータ構造 `PromptTerm` を用いる。これはラムダ計算における「項」に相当する。
 
 ```python
-import functools
-from dataclasses import dataclass, field
-from typing import Callable
-
-# 1. データの核：履歴を持つプロンプトオブジェクト
-@dataclass
 class PromptTerm:
-    text: str
-    origin: str
-    children: list['PromptTerm'] = field(default_factory=list)
-
-# 関数の型定義（PromptTermを受け取り、PromptTermを返す）
-PromptCombinator = Callable[[PromptTerm], PromptTerm]
-
-# 2. プロンプト関数（コンビネータ）の定義
-def with_system_role(role: str) -> PromptCombinator:
-    def _apply(arg: PromptTerm) -> PromptTerm:
-        new_text = f"【System Role: {role}】\n{arg.text}"
-        return PromptTerm(text=new_text, origin=f"with_system_role('{role}')", children=[arg])
-    return _apply
-
-def with_json_format(schema: str) -> PromptCombinator:
-    def _apply(arg: PromptTerm) -> PromptTerm:
-        new_text = f"{arg.text}\n\n【Output Rules】\nReturn valid JSON matching: {schema}"
-        return PromptTerm(text=new_text, origin="with_json_format", children=[arg])
-    return _apply
-
-def with_few_shot(examples: list[str]) -> PromptCombinator:
-    def _apply(arg: PromptTerm) -> PromptTerm:
-        examples_str = "\n".join(f"- {e}" for e in examples)
-        new_text = f"【Examples】\n{examples_str}\n\n{arg.text}"
-        return PromptTerm(text=new_text, origin=f"with_few_shot({len(examples)} items)", children=[arg])
-    return _apply
-
-# 3. パイプライン化（関数合成）
-def compose(*functions: PromptCombinator) -> PromptCombinator:
-    def _apply(arg: PromptTerm) -> PromptTerm:
-        return functools.reduce(lambda term, func: func(term), functions, arg)
-    return _apply
-
-# 4. デバッグ用：プロンプトの系譜（Tree）を可視化する関数
-def print_trace(term: PromptTerm, depth: int = 0):
-    indent = "  " * depth
-    prefix = "└─ " if depth > 0 else ""
-    print(f"{indent}{prefix}[{term.origin}]")
-    for child in term.children:
-        print_trace(child, depth + 1)
-
-if __name__ == "__main__":
-    user_input = PromptTerm(
-        text="Target code: `def add(a, b): return a - b`", 
-        origin="User Input"
-    )
-
-    build_reviewer_prompt = compose(
-        with_few_shot(["Review check: variable naming", "Review check: return type"]),
-        with_json_format('{"bug_found": bool, "suggestion": str}'),
-        with_system_role("Expert Python Reviewer"),
-    )
-
-    final_prompt = build_reviewer_prompt(user_input)
-
-    print("▼ プロンプトの生成履歴（Trace）")
-    print_trace(final_prompt)
-    print("\n▼ 最終的にLLMに送られるテキスト\n" + "-"*40)
-    print(final_prompt.text)
-    print("-" * 40)
+    text: str          # ベータ簡約（評価）された現在のテキスト
+    origin: str        # この項を生成した関数（コンビネータ）の識別子
+    children: list     # 適用元の親ノードへの参照
 ```
 
-## 5. 今後の開発アイディア・ロードマップ (Next Steps)
-antigravity環境で実装・検証していきたい機能案：
-* Pydanticとの統合 (CFG / Schema Injection)
-`with_pydantic_schema(model_cls)` のように、Pydanticモデルを引数に取り、自動でJSON Schemaや文脈自由文法（BNF）を生成して挿入するコンビネータの実装。
-* ツリー差分の可視化 (Diff Tracking)
-2つの `PromptTerm` を比較し、「どのコンビネータが追加・削除されたか」をGitライクに可視化する関数 `diff_terms(term_a, term_b)` の実装。これによりA/Bテストとデバッグを容易にする。
-* ローカルLLM（Ollama）および実行基盤とのシームレスな統合
-生成された `PromptTerm` をそのまま実行できるクライアントラッパーの実装。遅延評価（Lazy Evaluation）を活用し、必要な時にだけAPIを叩く設計。
+この構造により、テキストがどのように変異してきたかの完全な計算グラフ（系譜）が維持される。
+
+### 4.2. PromptCombinator (抽象化)
+システム指示の付与やJSON Schemaの注入といった操作は、すべて PromptTerm を受け取り、新たな PromptTerm を返す高階関数（コンビネータ）として実装される。
+
+$$
+Combinator = \lambda (term: \text{PromptTerm}). \text{PromptTerm}
+$$
+
+例えば、`with_system_role` は、引数として役割の文字列を受け取り、「コンテキストの先頭に役割を結合する関数」を返す。これはまさに部分適用によるコンテキストのバインディングである。
+
+### 4.3. Function Composition (適用とベータ簡約)
+個別のコンビネータは `compose` 関数によって連鎖（合成）される。
+
+```python
+Pythonbuild_prompt = compose(
+    with_few_shot(["example 1"]),
+    with_json_format('{"key": "value"}'),
+    with_system_role("Expert")
+)
+```
+
+この `build_prompt` は、実行されるまで一切の文字列操作を行わない。最後にユーザー入力という初期の `PromptTerm` が適用された瞬間に、連鎖的なベータ簡約が走り、背後で因果関係のツリー（AST）を構築しながら最終的なコンテキストを生成する。
+
+## 5. Engineering Benefits
+ラムダ計算のパラダイムをプロンプト構築に導入することで、以下の決定的なソフトウェア工学的恩恵が得られる。
+
+### 5.1. Structural Traceability & Tree Diffing (変更の追跡可能性)
+文字列結合では不可能だった「プロンプトの論理的差分の抽出」が可能になる。`PromptTerm` のツリー構造を比較することで、「システムプロンプトの役割が変更された」「Few-shotの例が一つ追加された」といった変更を、GitのTree Diffのように明確に可視化できる。これにより、LLMの出力変化（A/Bテスト）の因果関係を論理的に特定できる。
+
+### 5.2. Type Safety and CFG Injection (型安全と文脈自由文法の統合)
+プロンプトが関数として分離されているため、静的型システムと連携できる。例えば、`Pydantic`のモデルを受け取り、そこから動的に文脈自由文法（CFG）のルールや`JSON Schema`を抽出してASTに注入するコンビネータ（`with_pydantic_schema`）を作成できる。これにより、出力フォーマットの不整合を関数の構築（コンパイル）段階で防ぐことができる。
+
+### 5.3. Deterministic Unit Testing (決定論的テスト)
+LLMの非決定論的な振る舞いと、プロンプトの構築プロセスを完全に分離できる。開発者はLLM APIを叩くことなく、「特定の引数とコンビネータを組み合わせた際、期待されるプロンプトツリー（AST）が正確に構築されるか」を、通常のソフトウェア開発と同じように高速な単体テストとして検証できる。
+
+## 6. Conclusion
+
+我々はプロンプトを魔法の呪文として、あるいは壊れやすい文字列のスープとして扱う時代を終わらせる。LLMの推論をラムダ計算のパラダイムとして捉え直し、コンテキストをコンポーザブルな関数群として構築する「$\lambda$-Prompting」は、プロンプトエンジニアリングを近代的なソフトウェア工学の土俵へと引き戻し、堅牢で、予測可能で、追跡可能なコードベースへと昇華させるための基盤である。
