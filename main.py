@@ -2,7 +2,7 @@ import sys
 from pathlib import Path
 from pydantic import BaseModel, Field
 
-# srcディレクトリをパスに追加してインポートできるようにする
+# Add the src directory to the path so it can be imported
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from lambda_prompting import (
@@ -16,44 +16,44 @@ from lambda_prompting import (
     diff_terms,
 )
 
-# Pydanticモデルの定義
+# Define a Pydantic model
 class ReviewResult(BaseModel):
     bug_found: bool = Field(..., description="Whether a bug was found in the code")
     suggestion: str = Field(..., description="Suggestion for fixing the bug or improving the code")
 
 
 def main():
-    # 1. 初期状態（ユーザーからの入力など）
+    # 1. Initial state (e.g., user input)
     user_input = PromptTerm(
         text="Target code: `def add(a, b): return a - b`", 
         origin="User Input"
     )
 
-    # 2. 共通のベースプロンプト（部分適用・再利用）
+    # 2. Common base prompt (partial application / reuse)
     base_prompt_builder = compose(
         with_few_shot(["Review check: variable naming", "Review check: return type"])
     )
     base_term = base_prompt_builder(user_input)
 
-    # 3. ブランチ A: 従来の文字列ベースのJSON Format指定
+    # 3. Branch A: Traditional string-based JSON format specification
     builder_a = compose(
         with_json_format('{"bug_found": bool, "suggestion": str}'),
         with_system_role("Expert Python Reviewer"),
     )
     term_a = builder_a(base_term)
 
-    # 4. ブランチ B: 新しいPydantic統合スキーマ挿入
+    # 4. Branch B: New Pydantic integration for schema insertion
     builder_b = compose(
         with_pydantic_schema(ReviewResult),
-        with_system_role("Friendly Python Assistant"), # ロールも少し変えて差分を明確に
+        with_system_role("Friendly Python Assistant"), # Alter the role slightly to clarify the diff
     )
     term_b = builder_b(base_term)
 
-    # 5. 結果の確認（ツリー差分）
-    print("▼ プロンプト生成履歴の差分（Tree Diff）")
+    # 5. Verification (Tree Diff)
+    print("▼ Prompt Generation History Diff (Tree Diff)")
     print(diff_terms(term_a, term_b, name_a="Branch A (Manual)", name_b="Branch B (Pydantic)"))
     
-    print("\n▼ 最終的にLLMに送られるテキスト (Branch B)")
+    print("\n▼ Final Text Sent to LLM (Branch B)")
     print("-" * 40)
     print(term_b.text)
     print("-" * 40)
