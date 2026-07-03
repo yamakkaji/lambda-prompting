@@ -100,7 +100,7 @@ $$
 個別のコンビネータは `compose` 関数によって連鎖（合成）される。
 
 ```python
-Pythonbuild_prompt = compose(
+build_prompt = compose(
     with_few_shot(["example 1"]),
     with_json_format('{"key": "value"}'),
     with_system_role("Expert")
