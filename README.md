@@ -1,7 +1,5 @@
 # lambda-prompting
 
-*Ah, greetings, fellow traveler of the computational cosmos!*
-
 Have you ever looked at the state of modern "prompt engineering" and felt a profound sense of despair? We spend our days concatenating massive, fragile strings in natural language, hoping the LLM will parse our intent correctly. It is an approach completely divorced from the elegant paradigms of modern software engineering. We lack type safety, we lack modularity, and perhaps worst of all—we lack *traceability*. When you tweak a prompt, can you really tell exactly how the causal chain of instructions changed?
 
 If you share this frustration, you are not alone. 
