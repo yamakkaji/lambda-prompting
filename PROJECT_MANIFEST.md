@@ -8,7 +8,11 @@
 
 ## 2. 理論的背景 (Theoretical Framework)
 LLMの推論プロセス（Autoregressive generation）は、本質的にラムダ計算（Lambda Calculus）として非常にシンプルに定式化できる。
-$$M = \lambda c. \text{next\_token}(c)$$
+
+$$
+M = \lambda c. \text{next-token}(c)
+$$
+
 プロンプトエンジニアリングで行っている「システムプロンプトの付与」や「Few-shotの提示」は、ラムダ計算におけるカリー化（Currying）および部分適用（Partial Application）、そしてベータ簡約（$\beta$-reduction）に他ならない。
 
 この作用機序に忠実に従い、プロンプトを「静的な文字列」ではなく「コンテキストを受け取り、新たなコンテキストを返す高階関数（コンビネータ）」として実装する。

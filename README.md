@@ -8,7 +8,9 @@ If you share this frustration, you are not alone.
 
 Let us step back and look at a simple truth: the autoregressive generation of an LLM can be elegantly formalized as **Lambda Calculus**.
 
-$$M = \lambda c. \text{next\_token}(c)$$
+$$
+M = \lambda c. \text{next-token}(c)
+$$
 
 When we append a system role or provide a few-shot example, what we are really doing is *currying* and *partial application*, ultimately culminating in a glorious $\beta$-reduction. 
 
