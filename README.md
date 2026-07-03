@@ -27,6 +27,19 @@ For the rigorous theoretical underpinnings and detailed architectural decisions,
 - **Pydantic Integration**: Effortlessly inject robust JSON schemas directly into your prompt constraints via `with_pydantic_schema`.
 - **Tree Diffing**: Compare two prompt branches and visualize their divergence with a Git-like tree diff.
 
+## Comparison with Existing Tools
+
+### vs. LangChain (`PromptTemplate`)
+LangChain constructs prompts using string interpolation (e.g., `ChatPromptTemplate.from_messages(...)`). 
+While easy for simple tasks, as your agent grows complex, you end up with "Template Spaghetti."
+- **LangChain**: Modifying a prompt means editing a giant f-string. If an agent's output breaks, you have no programmatic way to trace *which specific instruction* caused the regression.
+- **Lambda-Prompting**: Prompts are ASTs built by pure functions. You can programmatically diff two prompts (like `git diff`) to see exactly which combinator (e.g., a specific few-shot example or guideline) was added or removed.
+
+### vs. DSPy
+DSPy is a fantastic framework that replaces manual prompt engineering with automated prompt optimization using signatures.
+- **DSPy**: Treats the prompt as an internal black-box state optimized by a compiler. It's powerful, but developers lose direct control and traceability over the generated context.
+- **Lambda-Prompting**: Gives control back to the software engineer. It provides a typesafe, traceable, and modular foundation to build prompts deterministically.
+
 ## Getting Started
 
 Make sure you have `uv` installed, then run the demonstration script:
