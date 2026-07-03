@@ -30,14 +30,65 @@ For the rigorous theoretical underpinnings and detailed architectural decisions,
 ## Comparison with Existing Tools
 
 ### vs. LangChain (`PromptTemplate`)
-LangChain constructs prompts using string interpolation (e.g., `ChatPromptTemplate.from_messages(...)`). 
-While easy for simple tasks, as your agent grows complex, you end up with "Template Spaghetti."
-- **LangChain**: Modifying a prompt means editing a giant f-string. If an agent's output breaks, you have no programmatic way to trace *which specific instruction* caused the regression.
-- **Lambda-Prompting**: Prompts are ASTs built by pure functions. You can programmatically diff two prompts (like `git diff`) to see exactly which combinator (e.g., a specific few-shot example or guideline) was added or removed.
+LangChain constructs prompts using string interpolation. While easy for simple tasks, as your agent grows complex, you end up with "Template Spaghetti." Modifying a prompt means editing a giant f-string, losing all programmatic traceability.
+
+**The LangChain Way (String Interpolation):**
+```python
+from langchain_core.prompts import PromptTemplate
+
+template = """
+【System Role: {role}】
+【Review Guidelines】
+- Check: Missing type hints
+- Check: Division by zero
+
+Target code: {code}
+
+【Instructions】
+Please think step-by-step.
+"""
+prompt = PromptTemplate.from_template(template)
+final_text = prompt.format(role="Senior Python Architect", code="def add(a, b): ...")
+```
+
+**The $\lambda$-Prompting Way (Function Composition):**
+```python
+# Fully modular, traceable, and diffable
+build_prompt = compose(
+    with_chain_of_thought(),
+    with_guidelines(["Check: Missing type hints", "Check: Division by zero"]),
+    with_system_role("Senior Python Architect")
+)
+final_prompt_term = build_prompt(user_input)
+```
 
 ### vs. DSPy
 DSPy is a fantastic framework that replaces manual prompt engineering with automated prompt optimization using signatures.
-- **DSPy**: Treats the prompt as an internal black-box state optimized by a compiler. It's powerful, but developers lose direct control and traceability over the generated context.
+
+**The DSPy Way (Black-box Optimization):**
+```python
+import dspy
+
+class CodeReviewer(dspy.Signature):
+    """Review code for missing type hints and division by zero."""
+    code = dspy.InputField()
+    review = dspy.OutputField()
+
+reviewer = dspy.ChainOfThought(CodeReviewer)
+# The actual prompt is generated internally by DSPy.
+# You lose direct control and traceability over the exact context sent.
+```
+
+**The $\lambda$-Prompting Way (Deterministic AST):**
+```python
+# You maintain total control. The prompt is an explicit AST of functions.
+build_prompt = compose(
+    with_chain_of_thought(),
+    with_pydantic_schema(ReviewResult),
+    with_system_role("Senior Python Architect")
+)
+```
+- **DSPy**: Treats the prompt as an internal black-box state optimized by a compiler. It's powerful, but developers lose direct control over the generated context.
 - **Lambda-Prompting**: Gives control back to the software engineer. It provides a typesafe, traceable, and modular foundation to build prompts deterministically.
 
 ## Getting Started
