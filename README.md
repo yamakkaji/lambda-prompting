@@ -62,34 +62,13 @@ build_prompt = compose(
 final_prompt_term = build_prompt(user_input)
 ```
 
-### vs. DSPy
-DSPy is a fantastic framework that replaces manual prompt engineering with automated prompt optimization using signatures.
+### What about DSPy?
+It is important to note that **$\lambda$-Prompting is not a competitor to DSPy; they are orthogonal and highly complementary.**
 
-**The DSPy Way (Black-box Optimization):**
-```python
-import dspy
+- **DSPy** is an *optimizer*. It treats prompt engineering as a machine learning problem, automatically finding the best prompt instructions and few-shot examples to maximize a specific metric.
+- **$\lambda$-Prompting** is an *architecture*. It provides a deterministic, AST-based foundation for constructing the prompt context.
 
-class CodeReviewer(dspy.Signature):
-    """Review code for missing type hints and division by zero."""
-    code = dspy.InputField()
-    review = dspy.OutputField()
-
-reviewer = dspy.ChainOfThought(CodeReviewer)
-# The actual prompt is generated internally by DSPy.
-# You lose direct control and traceability over the exact context sent.
-```
-
-**The $\lambda$-Prompting Way (Deterministic AST):**
-```python
-# You maintain total control. The prompt is an explicit AST of functions.
-build_prompt = compose(
-    with_chain_of_thought(),
-    with_pydantic_schema(ReviewResult),
-    with_system_role("Senior Python Architect")
-)
-```
-- **DSPy**: Treats the prompt as an internal black-box state optimized by a compiler. It's powerful, but developers lose direct control over the generated context.
-- **Lambda-Prompting**: Gives control back to the software engineer. It provides a typesafe, traceable, and modular foundation to build prompts deterministically.
+You can absolutely use DSPy *on top of* $\lambda$-Prompting! Instead of having DSPy optimize raw, opaque string templates, you can expose the arguments of your combinators (e.g., the specific `guidelines` or `few_shot` examples) as hyperparameters. DSPy's compiler can then search for the optimal AST configuration, giving you both the power of automated optimization and the rigorous traceability of functional composition.
 
 ## Getting Started
 
