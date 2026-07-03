@@ -48,7 +48,7 @@ Now, let us re-examine the mechanism of action of Large Language Models (LLMs) f
 The essential reasoning process (Autoregressive generation) of an LLM is "a function that takes the sequence of tokens so far (context $c$) and returns the probability distribution of the next token (or the next token itself)." We define this as a lambda abstraction.
 
 $$
-M = \lambda c. \text{next\_token}(c)
+M = \lambda c. \text{next-token}(c)
 $$
 
 ### 3.2. Prompt Engineering as Partial Application
@@ -57,13 +57,13 @@ In an actual application, the entire context $c$ is not a single string, but a c
 If we redefine this as a curried function, it becomes the following:
 
 $$
-M = \lambda s. \lambda e. \lambda u. \text{next\_token}(s \cdot e \cdot u)
+M = \lambda s. \lambda e. \lambda u. \text{next-token}(s \cdot e \cdot u)
 $$
 
 The task we call "prompt engineering"—for example, setting the system prompt $s_0$ as "You are a Python expert" and presenting the output format example $e_0$—is nothing other than **a partial application to this function $M$**.
 
 $$
-M_{expert} = M \, s_0 \, e_0 = \lambda u. \text{next\_token}(s_0 \cdot e_0 \cdot u)
+M_{expert} = M \, s_0 \, e_0 = \lambda u. \text{next-token}(s_0 \cdot e_0 \cdot u)
 $$
 
 The $M_{expert}$ obtained at this point is "a new function that has the context of an expert ($s_0, e_0$) bound internally." To the user, it simply looks like a "function that receives an input $u$ and processes it," but its reality is a mass of lazy evaluations waiting for $\beta$-reduction.

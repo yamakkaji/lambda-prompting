@@ -48,7 +48,7 @@ $$
 LLMの本質的な推論プロセス（Autoregressive generation）は、「これまでのトークン列（コンテキスト $c$）を受け取り、次のトークンの確率分布（あるいは次のトークンそのもの）を返す関数」である。これをラムダ抽象として定義する。
 
 $$
-M = \lambda c. \text{next\_token}(c)
+M = \lambda c. \text{next-token}(c)
 $$
 
 ### 3.2. Prompt Engineering as Partial Application
@@ -57,13 +57,13 @@ $$
 これをカリー化された関数として再定義すると、以下のようになる。
 
 $$
-M = \lambda s. \lambda e. \lambda u. \text{next\_token}(s \cdot e \cdot u)
+M = \lambda s. \lambda e. \lambda u. \text{next-token}(s \cdot e \cdot u)
 $$
 
 我々が「プロンプトエンジニアリング」と呼んでいる作業、例えば「あなたはPythonのエキスパートです」というシステムプロンプト $s_0$ を設定し、出力フォーマットの例 $e_0$ を提示する行為は、**この関数 $M$ に対する部分適用**に他ならない。
 
 $$
-M_{expert} = M \, s_0 \, e_0 = \lambda u. \text{next\_token}(s_0 \cdot e_0 \cdot u)
+M_{expert} = M \, s_0 \, e_0 = \lambda u. \text{next-token}(s_0 \cdot e_0 \cdot u)
 $$
 
 この時点で得られる $M_{expert}$ は、「エキスパートとしての文脈（$s_0, e_0$）を内部にバインドした、新しい関数」である。ユーザーからは単に「入力 $u$ を受け取って処理を行う関数」に見えるが、その実態はベータ簡約を待つ遅延評価の塊である。
