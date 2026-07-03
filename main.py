@@ -7,6 +7,7 @@ sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from lambda_prompting import (
     PromptTerm,
+    PromptCombinator,
     compose,
     print_trace,
     with_few_shot,
@@ -14,49 +15,84 @@ from lambda_prompting import (
     with_system_role,
     with_pydantic_schema,
     diff_terms,
+    render_tree,
 )
 
-# Define a Pydantic model
+# ---------------------------------------------------------
+# 1. Define Domain Specific Models and Combinators
+# ---------------------------------------------------------
 class ReviewResult(BaseModel):
-    bug_found: bool = Field(..., description="Whether a bug was found in the code")
+    thinking_process: str = Field(..., description="Step-by-step reasoning before making a conclusion")
+    bug_found: bool = Field(..., description="Whether a bug or issue was found in the code")
     suggestion: str = Field(..., description="Suggestion for fixing the bug or improving the code")
+    fixed_code: str = Field(..., description="The completely fixed code snippet")
 
+# You can easily define custom combinators for your project
+def with_guidelines(guidelines: list[str]) -> PromptCombinator:
+    def _apply(arg: PromptTerm) -> PromptTerm:
+        guidelines_str = "\n".join(f"- {g}" for g in guidelines)
+        new_text = f"【Review Guidelines】\n{guidelines_str}\n\n{arg.text}"
+        return PromptTerm(text=new_text, origin=f"with_guidelines({len(guidelines)} items)", children=[arg])
+    return _apply
 
+def with_chain_of_thought() -> PromptCombinator:
+    def _apply(arg: PromptTerm) -> PromptTerm:
+        new_text = f"{arg.text}\n\n【Instructions】\nPlease think step-by-step before providing the final answer."
+        return PromptTerm(text=new_text, origin="with_chain_of_thought", children=[arg])
+    return _apply
+
+# ---------------------------------------------------------
+# 2. Execution Pipeline
+# ---------------------------------------------------------
 def main():
-    # 1. Initial state (e.g., user input)
+    # A. Initial state (e.g., user input or retrieved code)
     user_input = PromptTerm(
-        text="Target code: `def add(a, b): return a - b`", 
+        text="Target code: `def apply_discount(price, pct): return price - (price * pct / 100)`", 
         origin="User Input"
     )
 
-    # 2. Common base prompt (partial application / reuse)
-    base_prompt_builder = compose(
-        with_few_shot(["Review check: variable naming", "Review check: return type"])
+    # B. Common base prompt (Building blocks reused across agents)
+    base_pipeline = compose(
+        with_guidelines(["Check: Missing type hints", "Check: Division by zero", "Check: Negative percentages"]),
+        with_few_shot(["Input: `def add(a, b): return a+b`\nReview: Missing type hints for `a` and `b`."])
     )
-    base_term = base_prompt_builder(user_input)
+    base_term = base_pipeline(user_input)
 
-    # 3. Branch A: Traditional string-based JSON format specification
-    builder_a = compose(
+    # C. Branch A: Traditional String-based Reviewer
+    term_a = compose(
         with_json_format('{"bug_found": bool, "suggestion": str}'),
-        with_system_role("Expert Python Reviewer"),
-    )
-    term_a = builder_a(base_term)
+        with_system_role("Standard Code Reviewer"),
+    )(base_term)
 
-    # 4. Branch B: New Pydantic integration for schema insertion
-    builder_b = compose(
+    # D. Branch B: Modern Architect with CoT and Pydantic Schema
+    term_b = compose(
+        with_chain_of_thought(),
         with_pydantic_schema(ReviewResult),
-        with_system_role("Friendly Python Assistant"), # Alter the role slightly to clarify the diff
-    )
-    term_b = builder_b(base_term)
+        with_system_role("Senior Python Architect"),
+    )(base_term)
 
-    # 5. Verification (Tree Diff)
-    print("▼ Prompt Generation History Diff (Tree Diff)")
-    print(diff_terms(term_a, term_b, name_a="Branch A (Manual)", name_b="Branch B (Pydantic)"))
+    # E. Branch C: Security Expert
+    term_c = compose(
+        with_json_format('{"vulnerability_found": bool, "severity": "low|medium|high"}'),
+        with_system_role("Cybersecurity Expert"),
+    )(base_term)
+
+    # ---------------------------------------------------------
+    # 3. Visualization and Results
+    # ---------------------------------------------------------
+    print("▼ Prompt Generation History (N-ary Tree)")
+    branches = {
+        "Branch A (Standard)": term_a,
+        "Branch B (Advanced)": term_b,
+        "Branch C (Security)": term_c
+    }
+    print(render_tree(branches))
     
-    print("\n▼ Final Text Sent to LLM (Branch B)")
-    print("-" * 40)
+    print("\n▼ Final Text Sent to LLM (Branch B - Advanced)")
+    print("=" * 60)
     print(term_b.text)
-    print("-" * 40)
+    print("=" * 60)
 
 if __name__ == "__main__":
     main()
+

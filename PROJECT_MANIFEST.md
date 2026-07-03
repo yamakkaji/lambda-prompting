@@ -1,110 +1,126 @@
-# Project Context: Lambda-Prompting Architecture
+# Project Manifest: The Lambda-Prompting Architecture
 
-## 1. The Problem
-Prompt engineering in current LLMs relies heavily on massive "string concatenation" in natural language, which critically deviates from the paradigms of modern software development (Code Writing).
-* Lack of Type Safety: Text editor autocompletion and static analysis (Linters) do not work.
-* Untrackable History: When a prompt is rewritten, the cause-and-effect relationship (Diff) of "what intent/instruction was added or removed, and how that changed the output" becomes ambiguous.
-* Lack of Componentization: Tools like DSPy are powerful, but their internals easily become a black box, making it difficult for developers to control and debug.
+## 1. The Crisis of Modern Prompt Engineering
+The greatest problem in current LLM application development is that prompt construction relies on the "massive string concatenation of natural language." This approach completely destroys the modularity, type safety, and testability that modern software engineering has established.
 
-## 2. Theoretical Framework
-The inference process of an LLM (Autoregressive generation) can be formulated very simply, essentially as Lambda Calculus.
+While advanced frameworks like DSPy have achieved certain successes through the approach of automatic prompt optimization, they simultaneously black-box their internal states, stripping developers of the traceability to understand "why that prompt was generated." What we need is not to treat prompts as an opaque soup of strings, but to redefine them as entirely composable functions that can be statically analyzed and whose modification history can be visualized as a tree structure.
+
+This project is an attempt to drag this chaotic prompt engineering back into the arena of modern software engineering by introducing the paradigm of **Lambda Calculus**, one of the most beautiful foundational theories of computer science.
+
+---
+
+## 2. A Brief Review of Lambda Calculus
+To understand how lambda calculus contributes to the architecture of this project, let us briefly review its core concepts.
+
+Lambda calculus is a mathematical system that expresses all computation using only "function definition (abstraction)" and "function invocation (application)." It primarily consists of the following three elements (lambda terms):
+
+1.  **Variable:** Symbols such as $x, y, z$.
+2.  **Abstraction:** $\lambda x. M$ 
+    This defines an "anonymous function that takes the variable $x$ as an argument and evaluates the expression $M$, which is the body." This is equivalent to a function declaration in programming languages.
+3.  **Application:** $M \, N$
+    The act of passing an argument $N$ to the function $M$ and executing it.
+
+### 2.1. $\beta$-reduction
+In lambda calculus, the "execution of computation" is the process of evaluating function application expressions and substituting characters, which is called **$\beta$-reduction**.
+When an argument $N$ is applied to the function $(\lambda x. M)$, all instances of the variable $x$ inside the body $M$ are replaced with $N$.
 
 $$
-M = \lambda c. \text{next-token}(c)
+(\lambda x. M) \, N \implies M[x \coloneqq N]
 $$
 
-The "addition of a system role" or "presentation of few-shot examples" commonly performed in prompt engineering is nothing more than currying, partial application, and $\beta$-reduction in Lambda Calculus.
+This process of "substituting symbols and expanding expressions," as described later, perfectly aligns with the process of constructing a context (prompt) and the LLM generating text.
 
-Strictly following this mechanism, we will implement prompts not as "static strings" but as "higher-order functions (combinators) that receive a context and return a new context."
+### 2.2. Currying and Partial Application
+In lambda calculus, a function always takes exactly one argument. A function that takes multiple arguments is expressed as "a function that takes the first argument and returns a function that takes the next argument" (Currying).
 
-## 3. Core Architecture
-Instead of simply being functions of strings, we define data structures that retain a "modification history (computation graph)."
+$$
+f(x, y) = M \implies \lambda x. \lambda y. M
+$$
 
-* PromptTerm (Term):
-Holds the final text (`text`), the origin of the function that generated it (`origin`), and a reference to the terms it was derived from (`children`). This constructs the Abstract Syntax Tree (AST) of the prompt.
-* PromptCombinator:
-A function that receives a `PromptTerm`, attaches new instructions (System Role, JSON Format, etc.), and returns a new `PromptTerm`.
-* compose (Function Composition):
-Applies multiple combinators sequentially (chaining $\beta$-reductions) to construct the final prompt tree.
+In this structure, the operation of passing only the first argument $x$ and delaying the rest of the evaluation is called **partial application**. This is a powerful means of confining (binding) a specific environment or state (context) within a function in advance.
 
-## 4. Proof of Concept
-Below is the reference implementation (`hello-world.py`), verified in the `uv` environment.
+---
+
+## 3. Connecting Lambda Calculus to LLMs
+Now, let us re-examine the mechanism of action of Large Language Models (LLMs) from the perspective of lambda calculus.
+
+### 3.1. LLM as a Lambda Function
+The essential reasoning process (Autoregressive generation) of an LLM is "a function that takes the sequence of tokens so far (context $c$) and returns the probability distribution of the next token (or the next token itself)." We define this as a lambda abstraction.
+
+$$
+M = \lambda c. \text{next\_token}(c)
+$$
+
+### 3.2. Prompt Engineering as Partial Application
+In an actual application, the entire context $c$ is not a single string, but a concatenation ($s \cdot e \cdot u$) of multiple elements such as system instructions ($s$), few-shot examples ($e$), and user input ($u$).
+
+If we redefine this as a curried function, it becomes the following:
+
+$$
+M = \lambda s. \lambda e. \lambda u. \text{next\_token}(s \cdot e \cdot u)
+$$
+
+The task we call "prompt engineering"—for example, setting the system prompt $s_0$ as "You are a Python expert" and presenting the output format example $e_0$—is nothing other than **a partial application to this function $M$**.
+
+$$
+M_{expert} = M \, s_0 \, e_0 = \lambda u. \text{next\_token}(s_0 \cdot e_0 \cdot u)
+$$
+
+The $M_{expert}$ obtained at this point is "a new function that has the context of an expert ($s_0, e_0$) bound internally." To the user, it simply looks like a "function that receives an input $u$ and processes it," but its reality is a mass of lazy evaluations waiting for $\beta$-reduction.
+
+The fatal flaw of existing approaches is that they have degraded this beautiful process of function composition into the extremely low-level operation of mere "string concatenation (`f"{s0}\n{e0}\n{u}"`)". The moment it is converted into a string, the boundary between system instructions and user input is lost, making it impossible to track which instruction influenced the output and how.
+
+---
+
+## 4. The Lambda-Prompting Architecture
+Lambda-Prompting embodies the theoretical background mentioned above in code by implementing prompts not as "concatenation of static strings" but as "the construction of an abstract syntax tree (AST) through the composition of higher-order functions."
+
+### 4.1. `PromptTerm`
+Instead of strings, we use the data structure `PromptTerm`, which holds the evaluation state and history. This corresponds to a "term" in lambda calculus.
 
 ```python
-import functools
-from dataclasses import dataclass, field
-from typing import Callable
-
-# 1. Data Core: Prompt object with history
-@dataclass
 class PromptTerm:
-    text: str
-    origin: str
-    children: list['PromptTerm'] = field(default_factory=list)
-
-# Function type definition (takes a PromptTerm, returns a PromptTerm)
-PromptCombinator = Callable[[PromptTerm], PromptTerm]
-
-# 2. Prompt Function (Combinator) Definitions
-def with_system_role(role: str) -> PromptCombinator:
-    def _apply(arg: PromptTerm) -> PromptTerm:
-        new_text = f"【System Role: {role}】\n{arg.text}"
-        return PromptTerm(text=new_text, origin=f"with_system_role('{role}')", children=[arg])
-    return _apply
-
-def with_json_format(schema: str) -> PromptCombinator:
-    def _apply(arg: PromptTerm) -> PromptTerm:
-        new_text = f"{arg.text}\n\n【Output Rules】\nReturn valid JSON matching: {schema}"
-        return PromptTerm(text=new_text, origin="with_json_format", children=[arg])
-    return _apply
-
-def with_few_shot(examples: list[str]) -> PromptCombinator:
-    def _apply(arg: PromptTerm) -> PromptTerm:
-        examples_str = "\n".join(f"- {e}" for e in examples)
-        new_text = f"【Examples】\n{examples_str}\n\n{arg.text}"
-        return PromptTerm(text=new_text, origin=f"with_few_shot({len(examples)} items)", children=[arg])
-    return _apply
-
-# 3. Pipelining (Function Composition)
-def compose(*functions: PromptCombinator) -> PromptCombinator:
-    def _apply(arg: PromptTerm) -> PromptTerm:
-        return functools.reduce(lambda term, func: func(term), functions, arg)
-    return _apply
-
-# 4. Debugging: Function to visualize the prompt's genealogy (Tree)
-def print_trace(term: PromptTerm, depth: int = 0):
-    indent = "  " * depth
-    prefix = "└─ " if depth > 0 else ""
-    print(f"{indent}{prefix}[{term.origin}]")
-    for child in term.children:
-        print_trace(child, depth + 1)
-
-if __name__ == "__main__":
-    user_input = PromptTerm(
-        text="Target code: `def add(a, b): return a - b`", 
-        origin="User Input"
-    )
-
-    build_reviewer_prompt = compose(
-        with_few_shot(["Review check: variable naming", "Review check: return type"]),
-        with_json_format('{"bug_found": bool, "suggestion": str}'),
-        with_system_role("Expert Python Reviewer"),
-    )
-
-    final_prompt = build_reviewer_prompt(user_input)
-
-    print("▼ Prompt Generation History (Trace)")
-    print_trace(final_prompt)
-    print("\n▼ Final Text Sent to LLM\n" + "-"*40)
-    print(final_prompt.text)
-    print("-" * 40)
+    text: str          # The current text after beta-reduction (evaluation)
+    origin: str        # The identifier of the function (combinator) that generated this term
+    children: list     # References to the parent nodes from which it was applied
 ```
 
-## 5. Next Steps
-Future features to be implemented and verified in the antigravity environment:
-* Integration with Pydantic (CFG / Schema Injection)
-Implementation of a combinator like `with_pydantic_schema(model_cls)`, which takes a Pydantic model as an argument and automatically generates and inserts a JSON Schema or Context-Free Grammar (BNF).
-* Diff Tracking
-Implementation of a function `diff_terms(term_a, term_b)` that compares two `PromptTerm` objects and visualizes "which combinators were added or removed" in a Git-like manner. This facilitates A/B testing and debugging.
-* Seamless Integration with Local LLMs (Ollama) and Execution Infrastructure
-Implementation of a client wrapper that can execute the generated `PromptTerm` as-is. A design utilizing Lazy Evaluation to hit the API only when necessary.
+With this structure, the complete computational graph (lineage) of how the text has mutated is maintained.
+
+### 4.2. PromptCombinator (Abstraction)
+Operations such as appending system instructions or injecting JSON Schemas are all implemented as higher-order functions (combinators) that receive a PromptTerm and return a new PromptTerm.
+
+$$
+Combinator = \lambda (term: \text{PromptTerm}). \text{PromptTerm}
+$$
+
+For example, `with_system_role` receives a role string as an argument and returns a "function that concatenates the role to the beginning of the context." This is exactly context binding via partial application.
+
+### 4.3. Function Composition (Application and $\beta$-reduction)
+Individual combinators are chained (composed) by the `compose` function.
+
+```python
+build_prompt = compose(
+    with_few_shot(["example 1"]),
+    with_json_format('{"key": "value"}'),
+    with_system_role("Expert")
+)
+```
+
+This `build_prompt` performs no string manipulation whatsoever until it is executed. At the very moment the initial `PromptTerm`, the user input, is applied at the end, a chain of $\beta$-reductions runs, constructing the causal tree (AST) in the background while generating the final context.
+
+## 5. Engineering Benefits
+By introducing the paradigm of lambda calculus into prompt construction, we gain the following decisive software engineering benefits:
+
+### 5.1. Structural Traceability & Tree Diffing
+"Logical diff extraction of prompts," which was impossible with string concatenation, becomes possible. By comparing the tree structures of `PromptTerm`s, changes such as "the role in the system prompt was altered" or "one few-shot example was added" can be clearly visualized, just like Git's Tree Diff. This allows developers to logically identify the causal relationship of LLM output variations (A/B testing).
+
+### 5.2. Type Safety and CFG Injection
+Because prompts are isolated as functions, they can interoperate with static type systems. For instance, we can create a combinator (`with_pydantic_schema`) that accepts a `Pydantic` model and dynamically extracts context-free grammar (CFG) rules or a `JSON Schema` from it to inject into the AST. This prevents output format inconsistencies at the construction (compilation) stage of the function.
+
+### 5.3. Deterministic Unit Testing
+The non-deterministic behavior of LLMs can be completely decoupled from the prompt construction process. Without hitting the LLM API, developers can verify "whether the expected prompt tree (AST) is constructed accurately when combining specific arguments and combinators" as fast unit tests, just like standard software development.
+
+## 6. Conclusion
+
+We are bringing an end to the era of treating prompts as magic spells or fragile soups of strings. "$\lambda$-Prompting," which reinterprets LLM reasoning through the paradigm of lambda calculus and constructs context as composable functions, is the foundation for dragging prompt engineering back into the arena of modern software engineering and elevating it into a robust, predictable, and traceable codebase.
