@@ -37,100 +37,87 @@ uv run main.py
 
 ### Example: Building a Multi-Agent Prompt Tree
 
-If you run the script, you will see a demonstration of how a prompt is built using functional composition. In `main.py`, we define a starting context (`User Input`) and a common foundation (`base_pipeline`) consisting of guidelines and a few-shot example.
+To demonstrate how a prompt is built using functional composition, let's walk through the `main.py` example step-by-step.
 
-From this shared foundation, we branch out into **three distinct agents**:
-1. **Branch A (Standard Reviewer)**: A basic reviewer outputting a simple JSON format.
-2. **Branch B (Advanced Architect)**: Adds Step-by-Step reasoning (Chain of Thought) and a robust Pydantic Schema constraint.
-3. **Branch C (Security Expert)**: Specifically tuned for finding vulnerabilities with a customized JSON output.
-
-Here is the actual implementation of this multi-agent prompt construction in `main.py`:
+#### 1. Defining Combinators and Schemas
+First, we define our domain-specific models and reusable combinators. Notice how combinators like `with_guidelines` are just higher-order functions that take a context (a `PromptTerm`) and return a new one:
 
 ```python
-import sys
-from pathlib import Path
 from pydantic import BaseModel, Field
+from lambda_prompting import PromptTerm, PromptCombinator, compose
 
-# Add the src directory to the path so it can be imported
-sys.path.insert(0, str(Path(__file__).parent / "src"))
-
-from lambda_prompting import (
-    PromptTerm,
-    PromptCombinator,
-    compose,
-    with_few_shot,
-    with_json_format,
-    with_system_role,
-    with_pydantic_schema,
-    render_tree,
-)
-
-# 1. Define Domain Specific Models and Combinators
 class ReviewResult(BaseModel):
-    thinking_process: str = Field(..., description="Step-by-step reasoning before making a conclusion")
-    bug_found: bool = Field(..., description="Whether a bug or issue was found in the code")
-    suggestion: str = Field(..., description="Suggestion for fixing the bug or improving the code")
-    fixed_code: str = Field(..., description="The completely fixed code snippet")
+    thinking_process: str = Field(..., description="Step-by-step reasoning")
+    bug_found: bool = Field(..., description="Whether a bug was found")
+    suggestion: str = Field(..., description="Suggestion for fixing the bug")
+    fixed_code: str = Field(..., description="The fixed code snippet")
 
 def with_guidelines(guidelines: list[str]) -> PromptCombinator:
     def _apply(arg: PromptTerm) -> PromptTerm:
         guidelines_str = "\n".join(f"- {g}" for g in guidelines)
         new_text = f"【Review Guidelines】\n{guidelines_str}\n\n{arg.text}"
+        # We record exactly which function modified the prompt, and from what parent
         return PromptTerm(text=new_text, origin=f"with_guidelines({len(guidelines)} items)", children=[arg])
     return _apply
-
-def with_chain_of_thought() -> PromptCombinator:
-    def _apply(arg: PromptTerm) -> PromptTerm:
-        new_text = f"{arg.text}\n\n【Instructions】\nPlease think step-by-step before providing the final answer."
-        return PromptTerm(text=new_text, origin="with_chain_of_thought", children=[arg])
-    return _apply
-
-def main():
-    # A. Initial state
-    user_input = PromptTerm(
-        text="Target code: `def apply_discount(price, pct): return price - (price * pct / 100)`", 
-        origin="User Input"
-    )
-
-    # B. Common base prompt
-    base_pipeline = compose(
-        with_guidelines(["Check: Missing type hints", "Check: Division by zero", "Check: Negative percentages"]),
-        with_few_shot(["Input: `def add(a, b): return a+b`\nReview: Missing type hints for `a` and `b`."])
-    )
-    base_term = base_pipeline(user_input)
-
-    # C. Branch A: Traditional String-based Reviewer
-    term_a = compose(
-        with_json_format('{"bug_found": bool, "suggestion": str}'),
-        with_system_role("Standard Code Reviewer"),
-    )(base_term)
-
-    # D. Branch B: Modern Architect with CoT and Pydantic Schema
-    term_b = compose(
-        with_chain_of_thought(),
-        with_pydantic_schema(ReviewResult),
-        with_system_role("Senior Python Architect"),
-    )(base_term)
-
-    # E. Branch C: Security Expert
-    term_c = compose(
-        with_json_format('{"vulnerability_found": bool, "severity": "low|medium|high"}'),
-        with_system_role("Cybersecurity Expert"),
-    )(base_term)
-
-    # 3. Visualization
-    branches = {
-        "Branch A (Standard)": term_a,
-        "Branch B (Advanced)": term_b,
-        "Branch C (Security)": term_c
-    }
-    print(render_tree(branches))
-
-if __name__ == "__main__":
-    main()
 ```
 
-Because the system tracks the abstract syntax tree of how each prompt was generated, it can render a beautifully colored, Git-style `N-ary` tree of the prompt's lineage:
+#### 2. The Initial State and Base Pipeline
+We start with the raw user input. Instead of immediately concatenating strings, we define a `base_pipeline`—a composed function containing instructions shared by all our agents.
+
+```python
+# A. Initial state
+user_input = PromptTerm(
+    text="Target code: `def apply_discount(price, pct): return price - (price * pct / 100)`", 
+    origin="User Input"
+)
+
+# B. Common base prompt (Building blocks reused across agents)
+base_pipeline = compose(
+    with_guidelines(["Check: Missing type hints", "Check: Division by zero"]),
+    with_few_shot(["Input: `def add(a, b): return a+b`\nReview: Missing type hints."])
+)
+base_term = base_pipeline(user_input)
+```
+
+#### 3. Branching into Specialized Agents
+From this shared foundation (`base_term`), we can branch out into **three distinct agents** by composing different combinators on top of it. Because evaluation is purely functional, `base_term` remains untouched, and we safely spawn three parallel prompt trees.
+
+```python
+# Branch A: Traditional String-based Reviewer
+term_a = compose(
+    with_json_format('{"bug_found": bool, "suggestion": str}'),
+    with_system_role("Standard Code Reviewer"),
+)(base_term)
+
+# Branch B: Modern Architect with Chain-of-Thought and Pydantic Schema
+term_b = compose(
+    with_chain_of_thought(),
+    with_pydantic_schema(ReviewResult),
+    with_system_role("Senior Python Architect"),
+)(base_term)
+
+# Branch C: Security Expert
+term_c = compose(
+    with_json_format('{"vulnerability_found": bool, "severity": "low|medium|high"}'),
+    with_system_role("Cybersecurity Expert"),
+)(base_term)
+```
+
+#### 4. Visualization and Traceability
+Because the system inherently tracks the abstract syntax tree (AST) of how each prompt was generated, it can render a beautifully colored, Git-style `N-ary` tree of the prompt's lineage.
+
+```python
+from lambda_prompting import render_tree
+
+branches = {
+    "Branch A (Standard)": term_a,
+    "Branch B (Advanced)": term_b,
+    "Branch C (Security)": term_c
+}
+print(render_tree(branches))
+```
+
+This generates a deterministic trace of our prompt's history:
 
 ```text
 ▼ Prompt Generation History (N-ary Tree)
